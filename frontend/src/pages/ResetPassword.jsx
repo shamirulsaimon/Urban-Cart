@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import api from "../api/client";
 
 export default function ResetPassword() {
-  const { uid, token } = useParams();
   const navigate = useNavigate();
+  const params = useParams();
+  const [search] = useSearchParams();
+
+  // ✅ supports BOTH:
+  // /reset-password/:uid/:token
+  // /reset-password?uid=...&token=...
+  const uid = params.uid || search.get("uid") || "";
+  const token = params.token || search.get("token") || "";
 
   const [form, setForm] = useState({
     new_password: "",
@@ -20,9 +27,9 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage("");
-    setError("");
     setLoading(true);
+    setError("");
+    setMessage("");
 
     try {
       const res = await api.post("/auth/reset-password/", {
@@ -32,53 +39,51 @@ export default function ResetPassword() {
         confirm_password: form.confirm_password,
       });
 
-      setMessage(res.data.detail);
-      setTimeout(() => navigate("/login"), 1500);
-
+      setMessage(res.data.detail || "Password reset successful.");
+      setTimeout(() => navigate("/login"), 1200);
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong.");
+      setError(
+        err?.response?.data?.detail ||
+          "Reset link is invalid or has expired."
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-md mx-auto bg-white rounded-xl shadow-sm p-6">
-      <h1 className="text-2xl font-semibold mb-4 text-center">Reset Password</h1>
+    <div className="max-w-md mx-auto bg-white p-6 rounded-xl shadow">
+      <h1 className="text-2xl font-semibold mb-4 text-center">
+        Reset Password
+      </h1>
 
-      {message && <p className="text-sm text-emerald-600 mb-3">{message}</p>}
-      {error && <p className="text-sm text-rose-600 mb-3">{error}</p>}
+      {message && <p className="text-green-600 text-sm mb-3">{message}</p>}
+      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
 
       {!message && (
-        <form onSubmit={handleSubmit} className="space-y-3 text-sm">
-          <div>
-            <label className="block mb-1 text-xs font-medium text-slate">New Password</label>
-            <input
-              type="password"
-              name="new_password"
-              value={form.new_password}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block mb-1 text-xs font-medium text-slate">Confirm Password</label>
-            <input
-              type="password"
-              name="confirm_password"
-              value={form.confirm_password}
-              onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              required
-            />
-          </div>
-
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="password"
+            name="new_password"
+            placeholder="New password"
+            value={form.new_password}
+            onChange={handleChange}
+            required
+            className="w-full border px-3 py-2 rounded"
+          />
+          <input
+            type="password"
+            name="confirm_password"
+            placeholder="Confirm password"
+            value={form.confirm_password}
+            onChange={handleChange}
+            required
+            className="w-full border px-3 py-2 rounded"
+          />
           <button
             type="submit"
-            className="w-full bg-sky-500 text-white py-2 rounded-lg hover:bg-sky-600 disabled:opacity-60"
             disabled={loading}
+            className="w-full bg-sky-500 text-white py-2 rounded disabled:opacity-60"
           >
             {loading ? "Updating..." : "Reset Password"}
           </button>
