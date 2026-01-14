@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# Django
+db.sqlite3
+
+# Env
+.env
+frontend/.env
+
+# Node
+node_modules/
+
+# Media (optional – uncomment if you don't want images in git)
+# backend/media/

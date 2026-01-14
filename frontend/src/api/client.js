@@ -6,7 +6,6 @@ const api = axios.create({
 });
 
 // ---- Helpers
-// ---- Helpers (UPDATED: supports old + new token keys safely)
 const getAccess = () =>
   localStorage.getItem("accessToken") ||
   localStorage.getItem("access_token") ||
@@ -19,7 +18,6 @@ const getRefresh = () =>
   localStorage.getItem("refresh");
 
 const setAccess = (token) => {
-  // keep your current architecture: canonical key is accessToken
   localStorage.setItem("accessToken", token);
 };
 
@@ -33,18 +31,30 @@ const clearTokens = () => {
   localStorage.removeItem("token");
 };
 
+// ✅ Public endpoints: never attach Bearer, never refresh-loop
+const isPublicAuthEndpoint = (url = "") =>
+  url.includes("/auth/login/") ||
+  url.includes("/auth/register/") ||
+  url.includes("/auth/forgot-password/") ||
+  url.includes("/auth/reset-password/") ||
+  url.includes("/auth/refresh/");
 
-// ---- Request: attach access token
+// ---- Request: attach access token (skip public auth endpoints)
 api.interceptors.request.use(
   (config) => {
-    const token = getAccess();
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    const url = config?.url || "";
+    if (!isPublicAuthEndpoint(url)) {
+      const token = getAccess();
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers?.Authorization) {
+      delete config.headers.Authorization;
+    }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// ---- Response: refresh on 401 (with queue)
+// ---- Response: refresh on 401 (skip public auth endpoints)
 let isRefreshing = false;
 let refreshQueue = [];
 
@@ -59,6 +69,11 @@ api.interceptors.response.use(
     const original = error.config;
 
     if (!error.response) return Promise.reject(error);
+
+    // ✅ Never refresh/redirect for login/reset/forgot endpoints
+    if (isPublicAuthEndpoint(original?.url || "")) {
+      return Promise.reject(error);
+    }
 
     if (error.response.status === 401 && !original._retry) {
       original._retry = true;
@@ -82,7 +97,6 @@ api.interceptors.response.use(
           return Promise.reject(error);
         }
 
-        // Refresh endpoint: /api/auth/refresh/
         const res = await axios.post(
           "http://127.0.0.1:8000/api/auth/refresh/",
           { refresh }
@@ -110,11 +124,6 @@ api.interceptors.response.use(
   }
 );
 
-/**
- * ✅ Download any file (xlsx/pdf/etc) as blob using this API client.
- * Example:
- *   await downloadBlob("/admin/orders/export-excel/?start=...&end=...", "orders.xlsx")
- */
 export async function downloadBlob(path, filename = "download.xlsx") {
   const res = await api.get(path, { responseType: "blob" });
 
@@ -134,6 +143,5 @@ export async function downloadBlob(path, filename = "download.xlsx") {
   return true;
 }
 
-// Named + default export (safe for all import styles)
 export { api };
 export default api;
