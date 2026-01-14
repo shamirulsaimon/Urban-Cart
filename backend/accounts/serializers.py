@@ -38,11 +38,12 @@ class ForgotPasswordSerializer(serializers.Serializer):
 
 class ResetPasswordSerializer(serializers.Serializer):
     uid = serializers.CharField()
-    token = serializers.CharField()
+    # ✅ don't trim token
+    token = serializers.CharField(trim_whitespace=False)
     new_password = serializers.CharField(min_length=6)
     confirm_password = serializers.CharField(min_length=6)
 
     def validate(self, attrs):
-        if attrs["new_password"] != attrs["confirm_password"]:
+        if (attrs.get("new_password") or "") != (attrs.get("confirm_password") or ""):
             raise serializers.ValidationError("Passwords do not match.")
         return attrs
