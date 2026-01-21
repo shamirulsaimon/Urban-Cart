@@ -54,6 +54,13 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
+
+        # ✅ BLOCK DISABLED USERS (vendors, customers, anyone)
+        # This ensures: admin disables vendor => vendor cannot login
+        if not getattr(self.user, "is_active", True):
+            from rest_framework.exceptions import AuthenticationFailed
+            raise AuthenticationFailed("Your account is disabled. Please contact support.")
+
         data["user"] = UserSerializer(self.user).data
         return data
 
@@ -170,7 +177,6 @@ class ForgotPasswordView(APIView):
             msg.attach_alternative(html_message, "text/html")
             msg.send()
         except Exception as e:
-            # ✅ Don't break UX / avoid user enumeration
             print("FORGOT PASSWORD EMAIL ERROR:", repr(e))
             return Response(
                 {"detail": "If this email exists, a reset link has been sent."},
