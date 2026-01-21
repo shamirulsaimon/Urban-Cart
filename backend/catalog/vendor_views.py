@@ -38,7 +38,6 @@ class VendorProductListCreateView(generics.ListCreateAPIView):
         serializer.save(vendor=self.request.user)
 
     def list(self, request, *args, **kwargs):
-        # ✅ keep the same JSON body, add a debug header to confirm correct view
         qs = self.get_queryset()
         serializer = self.get_serializer(qs, many=True, context={"request": request})
         res = Response(serializer.data)
@@ -52,7 +51,6 @@ class VendorProductDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = VendorProductWriteSerializer
 
     def get_queryset(self):
-        # ✅ only this vendor’s products
         return Product.objects.filter(vendor_id=self.request.user.id)
 
 
@@ -60,10 +58,8 @@ class VendorProductDeleteView(generics.DestroyAPIView):
     permission_classes = [RequireVendor]
 
     def get_queryset(self):
-        # ✅ only this vendor’s products
         return Product.objects.filter(vendor_id=self.request.user.id)
 
-    # Soft delete
     def delete(self, request, *args, **kwargs):
         product = self.get_object()
         product.is_active = False
@@ -107,7 +103,6 @@ class VendorProductImageListCreateView(generics.ListCreateAPIView):
         if not product:
             return
 
-        # append at end
         try:
             last = ProductImage.objects.filter(product=product).order_by("-sort_order", "-id").first()
             next_order = (last.sort_order if last and last.sort_order is not None else 0) + 1
@@ -146,8 +141,13 @@ class VendorProductImageReorderView(APIView):
         ser.is_valid(raise_exception=True)
         ordered_ids = ser.validated_data["ordered_ids"]
 
+        # ✅ prevent duplicates
+        if len(set(ordered_ids)) != len(ordered_ids):
+            return Response({"detail": "Duplicate image IDs are not allowed."}, status=400)
+
+        # ✅ validate ownership: count must match the list length
         imgs = list(ProductImage.objects.filter(product=product, id__in=ordered_ids))
-        if len(imgs) != len(set(ordered_ids)):
+        if len(imgs) != len(ordered_ids):
             return Response({"detail": "Some images do not belong to this product."}, status=400)
 
         id_to_idx = {img_id: idx for idx, img_id in enumerate(ordered_ids, start=1)}

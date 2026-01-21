@@ -1,14 +1,12 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
 import { useEffect, useState } from "react";
-
 import api from "./api/client";
-
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer.jsx";
-
 import Home from "./pages/Home";
 import ProductDetails from "./pages/ProductDetails.jsx";
+import Products from "./pages/Products";
 import Cart from "./pages/Cart.jsx";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -17,18 +15,20 @@ import ResetPassword from "./pages/ResetPassword";
 import Contact from "./pages/Contact.jsx";
 import Help from "./pages/Help.jsx";
 import MyOrders from "./pages/MyOrders";
-
 import CategoryProducts from "./pages/CategoryProducts.jsx";
 import SubcategoryProducts from "./pages/SubcategoryProducts";
 import CheckoutPage from "./pages/CheckoutPage";
 import OrderSuccess from "./pages/OrderSuccess";
-
-
+import UserDashboard from "./pages/UserDashboard.jsx";
 // ✅ NEW: payment redirect pages
 import PaymentSuccess from "./pages/PaymentSuccessPage.jsx";
 import PaymentFail from "./pages/PaymentFailPage.jsx";
 import PaymentCancel from "./pages/PaymentCancelPage.jsx";
 import PaymentDemoPage from "./pages/PaymentDemoPage.jsx";
+import PaymentSelect from "./pages/payment/PaymentSelect.jsx";
+import BkashDemo from "./pages/payment/BkashDemo.jsx";
+import CardDemo from "./pages/payment/CardDemo.jsx";
+
 // ✅ Admin UI
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProducts from "./admin/AdminProducts";
@@ -40,10 +40,16 @@ import AdminVendors from "./admin/AdminVendors";
 import VendorDashboard from "./vendor/VendorDashboard";
 import VendorProducts from "./vendor/VendorProducts";
 import VendorCategories from "./vendor/VendorCategories";
+import VendorSubCategories from "./vendor/VendorSubCategories"; // ✅ FIXED
 
-// ✅ NEW: Vendor Orders pages
+// ✅ Vendor Orders pages
 import VendorOrders from "./vendor/VendorOrders";
 import VendorOrderDetail from "./vendor/VendorOrderDetail";
+
+// Footer import
+import About from "./pages/About";
+import Terms from "./pages/Terms";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 
 /* =========================
    Admin Route (unchanged)
@@ -141,15 +147,20 @@ export default function App() {
           {/* Public Routes */}
           <Route path="/" element={<Home />} />
           <Route path="/products/:id" element={<ProductDetails />} />
-
+          <Route path="/products" element={<Products />} />
+          <Route path="/featured" element={<Products />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<CheckoutPage />} />
 
-          {/* ✅ Payment redirect routes */}
+          <Route path="/dashboard" element={<UserDashboard />} /> 
+          {/* Payment redirect routes */}
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/fail" element={<PaymentFail />} />
           <Route path="/payment/cancel" element={<PaymentCancel />} />
           <Route path="/payment/demo" element={<PaymentDemoPage />} />
+          <Route path="/payment/select" element={<PaymentSelect />} />
+          <Route path="/payment/bkash" element={<BkashDemo />} />
+          <Route path="/payment/card" element={<CardDemo />} />
 
           <Route path="/order-success/:orderId" element={<OrderSuccess />} />
           <Route path="/my-orders" element={<MyOrders />} />
@@ -163,9 +174,12 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
 
-
+          {/* Footer Pages */}
           <Route path="/contact" element={<Contact />} />
           <Route path="/help" element={<Help />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
 
           {/* Admin Routes */}
           <Route
@@ -237,16 +251,17 @@ export default function App() {
             }
           />
 
+          {/* ✅ FIXED: Vendor Subcategories */}
           <Route
             path="/vendor/subcategories"
             element={
               <VendorRoute>
-                <VendorCategories />
+                <VendorSubCategories />
               </VendorRoute>
             }
           />
 
-          {/* ✅ NEW Vendor Orders Routes */}
+          {/* Vendor Orders Routes */}
           <Route
             path="/vendor/orders"
             element={

@@ -123,44 +123,23 @@ export default function MyOrders() {
   }, [token]);
 
   // ✅ NEW: download invoice by order id
-  async function downloadInvoice(orderId, orderNumber) {
-    try {
-      if (!token) throw new Error("Please login first.");
-      setDownloadingId(orderId);
-
-      const url = `http://127.0.0.1:8000/api/orders/my/${orderId}/invoice/`;
-      const res = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob",
-        
-      });
-
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const blobUrl = window.URL.createObjectURL(blob);
-
-      const filename = orderNumber
-        ? `invoice-${orderNumber}.pdf`
-        : `invoice-order-${orderId}.pdf`;
-
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      window.URL.revokeObjectURL(blobUrl);
-    } catch (e) {
-      alert(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
-          e?.message ||
-          "Failed to download invoice."
-      );
-    } finally {
-      setDownloadingId(null);
-    }
+function downloadInvoice(orderId, orderNumber) {
+  if (!token) {
+    alert("Please login first.");
+    return;
   }
+
+  setDownloadingId(orderId);
+
+  const invoiceUrl = `http://127.0.0.1:8000/api/orders/my/${orderId}/invoice/`;
+  const url = `${invoiceUrl}?token=${encodeURIComponent(token)}`;
+
+  // ✅ Browser navigation → no CORS preflight
+  window.open(url, "_blank");
+
+  setDownloadingId(null);
+}
+
 
   return (
     <div className="min-h-[70vh] bg-[#f5f7fb]">

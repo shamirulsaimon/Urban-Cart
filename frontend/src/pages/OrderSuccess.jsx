@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import OrderStatusTimeline from "../admin/components/OrderStatusTimeline";
 
@@ -39,6 +39,7 @@ function cap(s) {
 
 export default function OrderSuccess() {
   const { orderId } = useParams();
+  const navigate = useNavigate(); // ✅ added
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -122,47 +123,18 @@ export default function OrderSuccess() {
   }, [order?.payment_method, order?.payment_status]);
 
   // ✅ download invoice function (PDF blob)
-  async function handleDownloadInvoice() {
-    try {
-      setDownloading(true);
-      setDownloadError("");
-
-      if (!token) throw new Error("Please login first.");
-
-      const invoiceUrl = `http://127.0.0.1:8000/api/orders/my/${orderId}/invoice/`;
-
-      const res = await axios.get(invoiceUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob",
-      });
-
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-
-      const filename =
-        order?.order_number
-          ? `invoice-${order.order_number}.pdf`
-          : `invoice-order-${orderId}.pdf`;
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      setDownloadError(
-        e?.response?.data?.detail ||
-          e?.response?.data?.error ||
-          e?.message ||
-          "Failed to download invoice."
-      );
-    } finally {
-      setDownloading(false);
-    }
+ function handleDownloadInvoice() {
+  if (!token) {
+    setDownloadError("Please login first.");
+    return;
   }
+
+  const invoiceUrl = `http://127.0.0.1:8000/api/orders/my/${orderId}/invoice/`;
+  const url = `${invoiceUrl}?token=${encodeURIComponent(token)}`;
+
+  window.open(url, "_blank");
+}
+
 
   async function handleRefreshPayment() {
     try {
@@ -235,7 +207,7 @@ export default function OrderSuccess() {
                 Your order has been received and is now being processed.
               </p>
 
-              {/* ✅ Payment info (minimal add) */}
+              {/* ✅ Payment info */}
               <div className="mt-3 text-sm text-gray-700 space-y-1">
                 <div>
                   <span className="text-gray-500">Payment Method:</span>{" "}
@@ -258,12 +230,27 @@ export default function OrderSuccess() {
                 </div>
               </div>
 
-              {/* ✅ Online payment guidance */}
+              {/* ✅ Online payment box (UPDATED for cancel/unpaid demo) */}
               {isOnline && !isPaid && (
-                <div className="mt-3 p-3 rounded-xl border bg-yellow-50 border-yellow-200 text-yellow-800 text-sm">
-                  Online payment is being confirmed. If you just completed payment,
-                  please wait a few seconds and refresh the status.
-                  <div className="mt-2">
+                <div className="mt-3 p-4 rounded-xl border bg-yellow-50 border-yellow-200 text-yellow-900 text-sm">
+                  <div className="font-semibold">Payment not completed (Demo).</div>
+                  <div className="mt-1 text-yellow-800">
+                    If you cancelled the payment or didn’t finish it, your order will remain{" "}
+                    <b>Unpaid</b>. You can pay later from <b>My Orders</b>.
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() =>
+                        navigate(
+                          `/payment/select?orderId=${encodeURIComponent(order?.id ?? orderId)}`
+                        )
+                      }
+                      className="px-3 py-2 rounded-lg bg-pink-600 text-white hover:bg-pink-700"
+                    >
+                      Pay Now (Demo)
+                    </button>
+
                     <button
                       onClick={handleRefreshPayment}
                       disabled={refreshing}
@@ -275,6 +262,11 @@ export default function OrderSuccess() {
                     >
                       {refreshing ? "Refreshing..." : "Refresh Payment Status"}
                     </button>
+                    
+                  </div>
+
+                  <div className="mt-3 text-xs text-yellow-700">
+                    ⚠ This is a demo payment system for academic project show only. No real transaction is performed.
                   </div>
                 </div>
               )}
@@ -282,9 +274,7 @@ export default function OrderSuccess() {
 
             <div className="text-right">
               <div className="text-sm text-gray-500">Order ID</div>
-              <div className="text-lg font-semibold">
-                #{order?.id ?? orderId}
-              </div>
+              <div className="text-lg font-semibold">#{order?.id ?? orderId}</div>
 
               <div className="mt-2 text-sm text-gray-500">Status</div>
               <div className="inline-flex mt-1 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium capitalize">
@@ -328,13 +318,12 @@ export default function OrderSuccess() {
         </div>
 
         {/* ✅ Order Status Timeline */}
-        {Array.isArray(order?.status_history) &&
-          order.status_history.length > 0 && (
-            <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">Order Progress</h2>
-              <OrderStatusTimeline history={order.status_history} />
-            </div>
-          )}
+        {Array.isArray(order?.status_history) && order.status_history.length > 0 && (
+          <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-4">Order Progress</h2>
+            <OrderStatusTimeline history={order.status_history} />
+          </div>
+        )}
 
         {/* Items + Summary */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">

@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 from django.utils.text import slugify
 from django.core.validators import MinValueValidator
 
@@ -128,6 +131,70 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    # =========================
+    # ✅ DISCOUNT HELPERS (NEW)
+    # =========================
+    @property
+    def discount_active(self) -> bool:
+        """
+        Active when:
+        - discount_type exists
+        - discount_value > 0
+        - within optional start/end window
+        """
+        if not self.discount_type or self.discount_value is None:
+            return False
+
+        try:
+            dv = Decimal(str(self.discount_value))
+        except Exception:
+            return False
+
+        if dv <= 0:
+            return False
+
+        # sanity checks (extra safety)
+        if self.discount_type == self.DISCOUNT_PERCENT and dv > 100:
+            return False
+
+        now = timezone.now()
+        if self.discount_start and now < self.discount_start:
+            return False
+        if self.discount_end and now > self.discount_end:
+            return False
+
+        return True
+
+    def get_final_price(self) -> Decimal:
+        """
+        Returns discounted price if discount is active, otherwise original price.
+        Always >= 0.
+        """
+        price = Decimal(str(self.price or "0"))
+
+        if not self.discount_active:
+            return price.quantize(Decimal("0.01"))
+
+        dv = Decimal(str(self.discount_value))
+
+        if self.discount_type == self.DISCOUNT_PERCENT:
+            final = price * (Decimal("100") - dv) / Decimal("100")
+        else:  # FIXED
+            final = price - dv
+
+        if final < 0:
+            final = Decimal("0")
+
+        return final.quantize(Decimal("0.01"))
+
+    def get_discount_amount(self) -> Decimal:
+        price = Decimal(str(self.price or "0")).quantize(Decimal("0.01"))
+        final = self.get_final_price()
+        amt = (price - final)
+        if amt < 0:
+            amt = Decimal("0")
+        return amt.quantize(Decimal("0.01"))
+
 
 class ProductImage(models.Model):
     product = models.ForeignKey(
@@ -137,9 +204,8 @@ class ProductImage(models.Model):
     )
     image = models.ImageField(upload_to="products/")
 
-    # ✅ ADD THIS (new)
+    # ✅ already in your file
     sort_order = models.IntegerField(default=0)
 
     def __str__(self):
         return f"Image for {self.product.name}"
-

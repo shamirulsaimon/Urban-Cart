@@ -12,6 +12,11 @@ function toImageUrl(img) {
   return `${API_BASE}/${img}`;
 }
 
+function toNumber(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export default function ProductDetails() {
   const { id } = useParams();
 
@@ -55,7 +60,7 @@ export default function ProductDetails() {
     };
   }, [id]);
 
-  const stock = Number(product?.stock ?? 0);
+  const stock = toNumber(product?.stock ?? 0);
   const outOfStock = stock <= 0;
   const atLimit = !outOfStock && qty >= stock;
 
@@ -110,10 +115,14 @@ export default function ProductDetails() {
   }
 
   const title = product.title || "Untitled";
-  const price = Number(product.price || 0);
   const brand = product.brand || "—";
   const desc = product.description || "No description.";
   const tags = Array.isArray(product.tags) ? product.tags : [];
+
+  const hasDiscount = !!product.hasDiscount;
+  const price = toNumber(product.price || 0);
+  const finalPrice = toNumber(product.finalPrice ?? product.final_price ?? price);
+  const discountAmount = toNumber(product.discountAmount ?? product.discount_amount ?? 0);
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -136,9 +145,24 @@ export default function ProductDetails() {
 
         <h1 className="text-2xl font-semibold">{title}</h1>
 
-        <p className="text-3xl font-bold text-blue-600">
-          ৳ {price.toLocaleString()}
-        </p>
+        {/* ✅ Discount-aware pricing */}
+        {hasDiscount ? (
+          <div className="space-y-1">
+            <p className="text-3xl font-bold text-blue-600">
+              ৳ {finalPrice.toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600">
+              <span className="line-through">৳ {price.toLocaleString()}</span>
+              <span className="ml-2 text-emerald-700 font-medium">
+                Save ৳ {discountAmount.toLocaleString()}
+              </span>
+            </p>
+          </div>
+        ) : (
+          <p className="text-3xl font-bold text-blue-600">
+            ৳ {price.toLocaleString()}
+          </p>
+        )}
 
         {outOfStock ? (
           <p className="text-red-600 font-medium">Out of stock</p>

@@ -52,6 +52,15 @@ const emptyForm = {
   imagesFiles: [],
 };
 
+// ✅ normalize admin UI type to backend expected values
+function normalizeDiscountType(v) {
+  if (!v) return "";
+  const t = String(v).toUpperCase();
+  if (t === "PERCENT") return "PERCENT";
+  if (t === "FIXED") return "FIXED";
+  return "";
+}
+
 export default function AdminProducts() {
   const [items, setItems] = useState([]);
   const [count, setCount] = useState(0);
@@ -149,26 +158,36 @@ export default function AdminProducts() {
 
   function openEdit(p) {
     setEditing(p);
+
+    // ✅ accept both camelCase & snake_case from backend
+    const catId = p.categoryId ?? p.category ?? p.category_id ?? "";
+    const subId = p.subcategoryId ?? p.subcategory ?? p.subcategory_id ?? "";
+
+    const dType = p.discountType ?? p.discount_type ?? "";
+    const dVal = p.discountValue ?? p.discount_value ?? "";
+
+    const active = p.isActive ?? p.is_active ?? false;
+
     setForm({
-      title: p.title || "",
+      title: p.title || p.name || "",
       description: p.description || "",
       price: p.price ?? "",
-      discountType: p.discountType || "",
-      discountValue: p.discountValue ?? "",
+      discountType: dType ? normalizeDiscountType(dType) : "",
+      discountValue: dVal ?? "",
       discountStart: "",
       discountEnd: "",
       stock: p.stock ?? 0,
       sku: p.sku ?? "",
       brand: p.brand ?? "",
       tagsText: (p.tags || []).join(", "),
-      categoryId: p.categoryId ?? "",
-      subcategoryId: p.subcategoryId ?? "",
-      isActive: !!p.isActive,
+      categoryId: catId ? String(catId) : "",
+      subcategoryId: subId ? String(subId) : "",
+      isActive: !!active,
       imagesFiles: [],
     });
-    setModalOpen(true);
 
-    if (p.categoryId) loadSubcategories(p.categoryId);
+    setModalOpen(true);
+    if (catId) loadSubcategories(catId);
   }
 
   function closeModal() {
@@ -180,7 +199,12 @@ export default function AdminProducts() {
   function buildFormData() {
     const fd = new FormData();
 
-    fd.append("title", form.title.trim());
+    // ✅ Backend expects name (not title)
+    const name = form.title.trim();
+    fd.append("name", name);
+    // keep title too (harmless if backend ignores it)
+    fd.append("title", name);
+
     fd.append("description", form.description || "");
     fd.append("price", String(Number(form.price || 0)));
     fd.append("stock", String(Number(form.stock || 0)));
@@ -188,19 +212,50 @@ export default function AdminProducts() {
     fd.append("sku", form.sku?.trim() || "");
     fd.append("brand", form.brand || "");
 
-    fd.append("discountType", form.discountType ? form.discountType : "");
-    fd.append("discountValue", form.discountType ? String(Number(form.discountValue || 0)) : "");
-    fd.append("discountStart", form.discountType && form.discountStart ? new Date(form.discountStart).toISOString() : "");
-    fd.append("discountEnd", form.discountType && form.discountEnd ? new Date(form.discountEnd).toISOString() : "");
+    // ✅ category/subcategory expected by backend (not categoryId/subcategoryId)
+    if (form.categoryId) {
+      fd.append("category", String(Number(form.categoryId)));
+      fd.append("categoryId", String(Number(form.categoryId))); // keep for backward compatibility
+    }
 
-    fd.append("categoryId", form.categoryId ? String(Number(form.categoryId)) : "");
-    fd.append("subcategoryId", form.subcategoryId ? String(Number(form.subcategoryId)) : "");
+    if (form.subcategoryId) {
+      fd.append("subcategory", String(Number(form.subcategoryId)));
+      fd.append("subcategoryId", String(Number(form.subcategoryId))); // keep for backward compatibility
+    }
 
-    fd.append("isActive", form.isActive ? "true" : "false");
+    // ✅ is_active expected by backend
+    fd.append("is_active", form.isActive ? "true" : "false");
+    fd.append("isActive", form.isActive ? "true" : "false"); // keep
+
+    // ✅ discount fields: only send when discountType selected
+    const dType = normalizeDiscountType(form.discountType);
+    if (dType) {
+      fd.append("discountType", dType);
+      fd.append("discount_type", dType);
+
+      fd.append("discountValue", String(Number(form.discountValue || 0)));
+      fd.append("discount_value", String(Number(form.discountValue || 0)));
+
+      if (form.discountStart) {
+        const iso = new Date(form.discountStart).toISOString();
+        fd.append("discountStart", iso);
+        fd.append("discount_start", iso);
+      }
+
+      if (form.discountEnd) {
+        const iso = new Date(form.discountEnd).toISOString();
+        fd.append("discountEnd", iso);
+        fd.append("discount_end", iso);
+      }
+    } else {
+      // If admin selects None, do NOT send discount fields (prevents serializer issues)
+      // (Vendor endpoint uses nulls via JSON; FormData can't reliably send null)
+    }
 
     const tags = parseList(form.tagsText);
     tags.forEach((t) => fd.append("tags", t));
 
+    // images (keep your key)
     (form.imagesFiles || []).forEach((file) => {
       fd.append("imagesInput", file);
     });
@@ -234,11 +289,14 @@ export default function AdminProducts() {
 
   async function toggleActive(p) {
     try {
+      const next = !(p.isActive ?? p.is_active);
+
       await axios.patch(
         `${API_BASE}/api/admin/products/${p.id}/`,
-        { isActive: !p.isActive },
+        { is_active: next, isActive: next }, // ✅ send both
         { headers: authHeaders() }
       );
+
       load();
     } catch (e) {
       setErr(toErrorMessage(e) || "Failed to update status");
@@ -346,19 +404,20 @@ export default function AdminProducts() {
               ) : (
                 items.map((p) => {
                   const img = (p.images && p.images[0]) || "";
+                  const active = p.isActive ?? p.is_active;
                   return (
                     <tr key={p.id} className="hover:bg-gray-50/50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
                             {img ? (
-                              <img src={img} alt={p.title} className="w-full h-full object-cover" />
+                              <img src={img} alt={p.title || p.name} className="w-full h-full object-cover" />
                             ) : (
                               <span className="text-xs text-gray-400">No img</span>
                             )}
                           </div>
                           <div>
-                            <div className="font-medium text-gray-900">{p.title}</div>
+                            <div className="font-medium text-gray-900">{p.title || p.name}</div>
                             <div className="text-xs text-gray-500">{p.slug}</div>
                           </div>
                         </div>
@@ -388,12 +447,12 @@ export default function AdminProducts() {
                         <button
                           onClick={() => toggleActive(p)}
                           className={`px-3 py-1 rounded-full text-xs border ${
-                            p.isActive
+                            active
                               ? "border-green-200 bg-green-50 text-green-700"
                               : "border-gray-200 bg-gray-100 text-gray-600"
                           }`}
                         >
-                          {p.isActive ? "Active" : "Inactive"}
+                          {active ? "Active" : "Inactive"}
                         </button>
                       </td>
 
@@ -439,9 +498,7 @@ export default function AdminProducts() {
       {/* ✅ Scrollable Modal */}
       {modalOpen ? (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
-          {/* ✅ max height + flex column */}
           <div className="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden max-h-[85vh] flex flex-col">
-            {/* header stays visible */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div className="font-semibold text-gray-900">{editing ? "Edit Product" : "Add Product"}</div>
               <button onClick={closeModal} className="px-3 py-2 rounded-lg hover:bg-gray-50">
@@ -449,7 +506,6 @@ export default function AdminProducts() {
               </button>
             </div>
 
-            {/* ✅ form area scrolls */}
             <form onSubmit={save} className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4 overflow-y-auto">
               <div className="sm:col-span-2">
                 <label className="text-xs text-gray-500">Title</label>

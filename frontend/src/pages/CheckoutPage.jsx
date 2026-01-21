@@ -50,9 +50,6 @@ export default function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ✅ Demo-only toggle (does not affect real flow unless enabled)
-  const [demoAutoSuccess, setDemoAutoSuccess] = useState(false);
-
   const [form, setForm] = useState({
     shipping_name: "",
     phone: "",
@@ -79,7 +76,7 @@ export default function CheckoutPage() {
     try {
       setLoading(true);
 
-      // 1) Create order
+      // 1) Create order (same as your architecture)
       const res = await axios.post(
         "http://127.0.0.1:8000/api/orders/checkout/",
         form,
@@ -93,35 +90,13 @@ export default function CheckoutPage() {
         throw new Error("Order created but order id was not returned.");
       }
 
-      // 2) If online payment, initiate gateway and redirect
+      // 2) SSLCommerz (Faculty Demo): redirect to payment selection page
       if (form.payment_method === "sslcommerz") {
-        // ✅ DEMO: auto-success (skip gateway)
-        if (demoAutoSuccess) {
-          cart.clearCart?.();
-          navigate(
-            `/payment/success?orderId=${encodeURIComponent(orderId)}&demo=1`,
-            { replace: true }
-          );
-          return;
-        }
-
-        const payRes = await axios.post(
-          "http://127.0.0.1:8000/api/payments/initiate/",
-          { orderId, method: "sslcommerz" },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-
-        const gatewayUrl = payRes?.data?.gateway_url;
-
-        if (!gatewayUrl) {
-          throw new Error("Payment initiated but gateway URL was not returned.");
-        }
-
-        // Clear cart only when payment initiation succeeds
-        cart.clearCart?.();
-
-        // Redirect to SSLCommerz
-        window.location.href = gatewayUrl;
+        // ✅ IMPORTANT: do NOT clear cart here.
+        // Cart should only clear after OTP verification success (demo flow).
+        navigate(`/payment/select?orderId=${encodeURIComponent(orderId)}`, {
+          replace: true,
+        });
         return;
       }
 
@@ -236,28 +211,15 @@ export default function CheckoutPage() {
                     <span className="flex items-center gap-2">
                       Pay Online (SSLCommerz)
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200">
-                        Sandbox Demo
+                        Demo Flow
                       </span>
                     </span>
                   </label>
 
-                  {/* ✅ Demo-only auto success toggle (only visible when SSLCommerz selected) */}
                   {form.payment_method === "sslcommerz" && (
-                    <div className="ml-6 mt-2 flex items-start gap-2">
-                      <input
-                        id="demoAutoSuccess"
-                        type="checkbox"
-                        checked={demoAutoSuccess}
-                        onChange={(e) => setDemoAutoSuccess(e.target.checked)}
-                        className="mt-1"
-                      />
-                      <label
-                        htmlFor="demoAutoSuccess"
-                        className="text-xs text-gray-600"
-                      >
-                        Demo: auto-success (skip gateway redirect)
-                      </label>
-                    </div>
+                    <p className="ml-6 text-xs text-gray-600">
+                      You will be redirected to a demo payment page (bKash/Card) and OTP will be sent to your login email.
+                    </p>
                   )}
                 </div>
               </div>

@@ -94,6 +94,11 @@ class ProductSerializer(serializers.ModelSerializer):
     discountStart = serializers.DateTimeField(source="discount_start", read_only=True)
     discountEnd = serializers.DateTimeField(source="discount_end", read_only=True)
 
+    # ✅ NEW (non-breaking): frontend can use these immediately
+    hasDiscount = serializers.SerializerMethodField()
+    finalPrice = serializers.SerializerMethodField()
+    discountAmount = serializers.SerializerMethodField()
+
     # IMPORTANT: keep as URL list (don’t break existing frontend)
     images = serializers.SerializerMethodField()
 
@@ -105,6 +110,17 @@ class ProductSerializer(serializers.ModelSerializer):
             imgs = obj.images.all().order_by("id")
         return [_to_url(request, img.image) for img in imgs]
 
+    def get_hasDiscount(self, obj):
+        return bool(getattr(obj, "discount_active", False))
+
+    def get_finalPrice(self, obj):
+        fn = getattr(obj, "get_final_price", None)
+        return fn() if callable(fn) else obj.price
+
+    def get_discountAmount(self, obj):
+        fn = getattr(obj, "get_discount_amount", None)
+        return fn() if callable(fn) else 0
+
     class Meta:
         model = Product
         fields = [
@@ -113,10 +129,17 @@ class ProductSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "price",
+
             "discountType",
             "discountValue",
             "discountStart",
             "discountEnd",
+
+            # ✅ NEW
+            "hasDiscount",
+            "finalPrice",
+            "discountAmount",
+
             "stock",
             "sku",
             "brand",
@@ -135,7 +158,6 @@ class VendorProductWriteSerializer(serializers.ModelSerializer):
     ✅ Vendor write serializer:
     - Allows vendor to set category/subcategory safely (ownership validated)
     - Allows vendor to set discount fields (dates optional)
-    - Keeps existing structure and fields
     """
 
     # Accept camelCase from frontend while writing to snake_case fields in DB
@@ -177,7 +199,7 @@ class VendorProductWriteSerializer(serializers.ModelSerializer):
             "category",
             "subcategory",
 
-            # ✅ NEW: discount write support (camelCase inputs)
+            # ✅ discount write support
             "discountType",
             "discountValue",
             "discountStart",
@@ -185,12 +207,6 @@ class VendorProductWriteSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
-        """
-        ✅ Critical security:
-        - vendor can only use their own Category/SubCategory
-        - subcategory must belong to category (if both provided)
-        - discountStart/End are optional (Option A)
-        """
         request = self.context.get("request")
         user = getattr(request, "user", None)
 
@@ -201,32 +217,34 @@ class VendorProductWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"category": "You can only use your own categories."})
 
         if subcategory:
-            # If subcategory has vendor set, enforce ownership
             if subcategory.vendor and user and subcategory.vendor_id != user.id:
                 raise serializers.ValidationError({"subcategory": "You can only use your own subcategories."})
 
-            # Also ensure subcategory's category belongs to vendor (if vendor set there)
             if subcategory.category and subcategory.category.vendor and user and subcategory.category.vendor_id != user.id:
                 raise serializers.ValidationError({"subcategory": "This subcategory belongs to another vendor."})
 
         if category and subcategory and subcategory.category_id != category.id:
             raise serializers.ValidationError({"subcategory": "Subcategory does not belong to selected category."})
 
-        # Discount validation (dates optional)
+        # ======================
+        # ✅ Discount validation
+        # ======================
         discount_type = attrs.get("discount_type")
         discount_value = attrs.get("discount_value")
 
-        if discount_type and (discount_value is None):
+        # If one is set, require the other
+        if discount_type and discount_value is None:
             raise serializers.ValidationError({"discountValue": "discountValue is required when discountType is set."})
+        if discount_value is not None and not discount_type:
+            raise serializers.ValidationError({"discountType": "discountType is required when discountValue is set."})
 
-        if discount_value is not None and discount_value < 0:
-            raise serializers.ValidationError({"discountValue": "discountValue must be >= 0."})
+        if discount_type:
+            if discount_value is None or discount_value <= 0:
+                raise serializers.ValidationError({"discountValue": "discountValue must be > 0 when discountType is set."})
 
-        # If percent, keep it sane
-        if discount_type == Product.DISCOUNT_PERCENT and discount_value is not None and discount_value > 100:
-            raise serializers.ValidationError({"discountValue": "Percent discount cannot exceed 100."})
+            if discount_type == Product.DISCOUNT_PERCENT and discount_value > 100:
+                raise serializers.ValidationError({"discountValue": "Percent discount cannot exceed 100."})
 
-        # If dates exist, ensure start <= end
         ds = attrs.get("discount_start")
         de = attrs.get("discount_end")
         if ds and de and ds > de:
@@ -251,7 +269,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
         model = ProductImage
         fields = ["id", "url", "sortOrder", "image"]
         extra_kwargs = {
-            "image": {"write_only": True}  # upload only
+            "image": {"write_only": True}
         }
 
     def get_url(self, obj):

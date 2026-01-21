@@ -1,6 +1,7 @@
 from rest_framework import generics, filters
 from rest_framework.permissions import AllowAny
 from django.db.models.functions import Random
+from django.db.models import Q
 
 from .models import Product, Category, SubCategory
 from .serializers import (
@@ -16,7 +17,7 @@ from admin_api.permissions import RequireVendor
 
 
 # ======================
-# PUBLIC VIEWS (UNCHANGED)
+# PUBLIC VIEWS
 # ======================
 
 class ProductListView(generics.ListAPIView):
@@ -56,8 +57,17 @@ class ProductDetailByIdView(generics.RetrieveAPIView):
 
 class CategoryListView(generics.ListAPIView):
     permission_classes = [AllowAny]
-    queryset = Category.objects.filter(is_active=True, vendor__isnull=True)
     serializer_class = CategorySerializer
+
+    def get_queryset(self):
+        # ✅ Show admin/global categories + vendor categories
+        # ✅ Only active categories
+        # ✅ Only categories owned by active vendors (prevents disabled vendor leaks)
+        return (
+            Category.objects.filter(is_active=True)
+            .filter(Q(vendor__isnull=True) | Q(vendor__is_active=True))
+            .order_by("sort_order", "name")
+        )
 
 
 class SubCategoryListView(generics.ListAPIView):
@@ -65,7 +75,12 @@ class SubCategoryListView(generics.ListAPIView):
     serializer_class = SubCategorySerializer
 
     def get_queryset(self):
-        return SubCategory.objects.filter(is_active=True, vendor__isnull=True)
+        # ✅ Same rule for subcategories
+        return (
+            SubCategory.objects.filter(is_active=True)
+            .filter(Q(vendor__isnull=True) | Q(vendor__is_active=True))
+            .order_by("sort_order", "name")
+        )
 
 
 # ======================

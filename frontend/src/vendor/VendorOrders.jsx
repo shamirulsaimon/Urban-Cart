@@ -23,7 +23,7 @@ function cap(s) {
   return String(s).charAt(0).toUpperCase() + String(s).slice(1);
 }
 
-// ✅ NEW: robust title getter (supports many backend shapes)
+// ✅ robust title getter
 function getItemTitle(x) {
   if (!x) return "Item";
   return (
@@ -39,7 +39,7 @@ function getItemTitle(x) {
   );
 }
 
-// ✅ NEW: robust image getter (supports many backend shapes)
+// ✅ robust image getter
 function getItemImage(x) {
   if (!x) return null;
   return (
@@ -76,10 +76,28 @@ function Modal({ open, onClose, children }) {
   );
 }
 
+// ✅ Extract backend error detail nicely
+function getApiErrorMessage(e) {
+  const data = e?.response?.data;
+  if (!data) return "Request failed.";
+  if (typeof data === "string") return data;
+  if (data.detail) return data.detail;
+  if (data.error) return data.error;
+
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return "Request failed.";
+  }
+}
+
 export default function VendorOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ✅ NEW: search query state
+  const [q, setQ] = useState("");
 
   const [openId, setOpenId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -87,14 +105,15 @@ export default function VendorOrders() {
   const [detailError, setDetailError] = useState("");
 
   const [statusForm, setStatusForm] = useState({ status: "", note: "" });
+
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [saveErr, setSaveErr] = useState("");
 
   async function loadOrders() {
     setLoading(true);
     setError("");
     try {
-      // ✅ IMPORTANT: do NOT prefix /api here
       const res = await api.get("/orders/vendor/orders/");
       const data = res.data;
 
@@ -120,6 +139,8 @@ export default function VendorOrders() {
     setDetailLoading(true);
     setDetailError("");
     setSaveMsg("");
+    setSaveErr("");
+
     try {
       const res = await api.get(`/orders/vendor/orders/${id}/`);
       setDetail(res.data);
@@ -139,13 +160,16 @@ export default function VendorOrders() {
     setDetail(null);
     setDetailError("");
     setSaveMsg("");
+    setSaveErr("");
     setSaving(false);
   }
 
+  // ✅ Build rows: show ALL item names in the table
   const orderRows = useMemo(() => {
     return orders.map((o) => {
       const items = Array.isArray(o.items) ? o.items : [];
-      const first = items[0] || null;
+
+      const itemTitles = items.map((it) => getItemTitle(it)).filter(Boolean);
 
       return {
         id: o.id,
@@ -157,20 +181,112 @@ export default function VendorOrders() {
         total: o.total,
         item_count: items.length,
 
-        // ✅ FIXED:
-        first_title: getItemTitle(first),
-        first_image: getItemImage(first),
+        // ✅ NEW
+        item_titles: itemTitles,
+        first_image: getItemImage(items[0]),
       };
     });
   }, [orders]);
+
+  // ✅ NEW: filtered rows by search
+  const filteredRows = useMemo(() => {
+    const needle = (q || "").trim().toLowerCase();
+    if (!needle) return orderRows;
+
+    return orderRows.filter((o) => {
+      const hay = [
+        o.order_number,
+        o.customer_name,
+        o.customer_email,
+        o.status,
+        o.payment_status,
+        (o.item_titles || []).join(", "),
+        String(o.id),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return hay.includes(needle);
+    });
+  }, [orderRows, q]);
+
+  const allowedNext = useMemo(() => {
+    const v =
+      detail?.allowed_next_statuses ||
+      detail?.allowedNextStatuses ||
+      detail?.allowed_next_steps ||
+      null;
+
+    if (Array.isArray(v) && v.length) return v.map((x) => String(x).toLowerCase());
+    return ALL_STATUSES;
+  }, [detail]);
+
+  const currentStatus = useMemo(
+    () => (detail?.status || "").toLowerCase(),
+    [detail]
+  );
+
+  const isSelectedAllowed = useMemo(() => {
+    const s = (statusForm.status || "").toLowerCase();
+    if (!s) return false;
+    return allowedNext.includes(s) || s === currentStatus;
+  }, [statusForm.status, allowedNext, currentStatus]);
+
+  const noteRequired = useMemo(() => {
+    const s = (statusForm.status || "").toLowerCase();
+    return s === "cancelled" || s === "refunded";
+  }, [statusForm.status]);
+
+  const canSave = useMemo(() => {
+    if (!detail?.id) return false;
+    if (saving) return false;
+
+    const next = (statusForm.status || "").toLowerCase();
+    if (!next) return false;
+
+    if (!isSelectedAllowed) return false;
+
+    // prevent no-op without note
+    if (next === currentStatus && !(statusForm.note || "").trim()) return false;
+
+    if (noteRequired && !(statusForm.note || "").trim()) return false;
+
+    return true;
+  }, [
+    detail?.id,
+    saving,
+    statusForm.status,
+    statusForm.note,
+    isSelectedAllowed,
+    currentStatus,
+    noteRequired,
+  ]);
 
   async function saveStatus() {
     if (!detail?.id) return;
     setSaving(true);
     setSaveMsg("");
+    setSaveErr("");
 
     try {
-      const payload = { status: statusForm.status, note: statusForm.note };
+      const next = (statusForm.status || "").toLowerCase();
+      const note = (statusForm.note || "").trim();
+
+      if (!next) {
+        setSaveErr("Please select a status.");
+        return;
+      }
+      if (!isSelectedAllowed) {
+        setSaveErr("This status is not allowed for this order.");
+        return;
+      }
+      if ((next === "cancelled" || next === "refunded") && !note) {
+        setSaveErr("A note is required for cancelled/refunded.");
+        return;
+      }
+
+      const payload = { status: next, note };
       await api.patch(`/orders/vendor/orders/${detail.id}/`, payload);
 
       setSaveMsg("Status updated ✅");
@@ -179,7 +295,7 @@ export default function VendorOrders() {
       await loadOrders();
     } catch (e) {
       console.error(e);
-      setSaveMsg("Failed to update status (backend may not allow vendor updates).");
+      setSaveErr(getApiErrorMessage(e) || "Failed to update status.");
     } finally {
       setSaving(false);
     }
@@ -192,14 +308,12 @@ export default function VendorOrders() {
 
   const timeline = useMemo(() => {
     const raw =
-      detail?.status_history ||
-      detail?.status_timeline ||
-      detail?.history ||
-      [];
+      detail?.status_history || detail?.status_timeline || detail?.history || [];
     if (Array.isArray(raw) && raw.length) return raw;
 
     const createdAt = detail?.created_at || detail?.createdAt;
     const current = detail?.status;
+
     const items = [];
     if (createdAt) {
       items.push({
@@ -220,32 +334,42 @@ export default function VendorOrders() {
     return items;
   }, [detail]);
 
-  const allowedNext = useMemo(() => {
-    const v =
-      detail?.allowed_next_statuses ||
-      detail?.allowedNextStatuses ||
-      detail?.allowed_next_steps ||
-      null;
-
-    if (Array.isArray(v) && v.length) return v.map((x) => String(x).toLowerCase());
-    return ALL_STATUSES;
-  }, [detail]);
-
   return (
     <div className="min-h-screen bg-[#f5f7fb] p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-semibold text-gray-900">My Orders</h1>
             <p className="mt-2 text-slate-600">Orders containing your products only.</p>
           </div>
 
-          <button
-            onClick={loadOrders}
-            className="px-6 py-3 rounded-2xl border bg-white hover:bg-gray-50"
-          >
-            Refresh
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            {/* ✅ NEW: Search bar */}
+            <div className="relative">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search orders: order#, customer, status, item…"
+                className="w-full sm:w-[360px] px-4 py-3 rounded-2xl border bg-white outline-none focus:ring-2 focus:ring-slate-200"
+              />
+              {q ? (
+                <button
+                  onClick={() => setQ("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 text-sm"
+                  title="Clear"
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+
+            <button
+              onClick={loadOrders}
+              className="px-6 py-3 rounded-2xl border bg-white hover:bg-gray-50"
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -261,7 +385,7 @@ export default function VendorOrders() {
                 <tr className="text-left text-slate-600 border-b">
                   <th className="py-4 px-5">Order #</th>
                   <th className="py-4 px-5">Customer</th>
-                  <th className="py-4 px-5">Item</th>
+                  <th className="py-4 px-5">Items</th>
                   <th className="py-4 px-5">Status</th>
                   <th className="py-4 px-5">Payment</th>
                   <th className="py-4 px-5">Total</th>
@@ -276,14 +400,14 @@ export default function VendorOrders() {
                       Loading…
                     </td>
                   </tr>
-                ) : orderRows.length === 0 ? (
+                ) : filteredRows.length === 0 ? (
                   <tr>
                     <td className="py-10 px-5 text-slate-600" colSpan={7}>
                       No orders found.
                     </td>
                   </tr>
                 ) : (
-                  orderRows.map((o) => (
+                  filteredRows.map((o) => (
                     <tr key={o.id} className="border-b last:border-0">
                       <td className="py-5 px-5 font-medium">{o.order_number}</td>
 
@@ -294,8 +418,9 @@ export default function VendorOrders() {
                         ) : null}
                       </td>
 
+                      {/* ✅ Items column: show ALL item names */}
                       <td className="py-5 px-5">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-start gap-3">
                           <div className="h-12 w-12 rounded-2xl border bg-gray-50 overflow-hidden flex items-center justify-center">
                             {o.first_image ? (
                               <img
@@ -309,11 +434,13 @@ export default function VendorOrders() {
                           </div>
 
                           <div className="min-w-0">
-                            <div className="font-medium text-slate-900 truncate max-w-[360px]">
-                              {o.first_title}
+                            <div className="font-medium text-slate-900 line-clamp-2 max-w-[360px]">
+                              {o.item_titles && o.item_titles.length
+                                ? o.item_titles.join(", ")
+                                : "—"}
                             </div>
-                            <div className="text-xs text-slate-500">
-                              {o.item_count} item(s)
+                            <div className="text-xs text-slate-500 mt-1">
+                              {o.item_count} item{o.item_count > 1 ? "s" : ""}
                             </div>
                           </div>
                         </div>
@@ -341,6 +468,18 @@ export default function VendorOrders() {
               </tbody>
             </table>
           </div>
+
+          {/* ✅ NEW: footer hint */}
+          <div className="px-5 py-3 border-t text-xs text-slate-600 bg-white">
+            Showing <span className="font-medium text-slate-900">{filteredRows.length}</span> of{" "}
+            <span className="font-medium text-slate-900">{orderRows.length}</span> orders
+            {q ? (
+              <>
+                {" "}
+                for search “<span className="font-medium text-slate-900">{q}</span>”
+              </>
+            ) : null}
+          </div>
         </div>
 
         <Modal open={Boolean(openId)} onClose={closeModal}>
@@ -360,11 +499,14 @@ export default function VendorOrders() {
             </button>
           </div>
 
-          <div className="p-6 bg-[#f5f7fb]">
+          <div className="p-6 bg-[#f5f7fb] max-h-[80vh] overflow-y-auto">
+
             {detailLoading ? (
               <div className="p-6 bg-white rounded-2xl border">Loading order…</div>
             ) : detailError ? (
-              <div className="p-6 bg-white rounded-2xl border text-rose-600">{detailError}</div>
+              <div className="p-6 bg-white rounded-2xl border text-rose-600">
+                {detailError}
+              </div>
             ) : !detail ? (
               <div className="p-6 bg-white rounded-2xl border">No data.</div>
             ) : (
@@ -413,16 +555,18 @@ export default function VendorOrders() {
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-slate-900">
-                              {getItemTitle(it)}
-                            </div>
+                            <div className="font-medium text-slate-900">{getItemTitle(it)}</div>
                             <div className="text-sm text-slate-500">
                               Qty: {it.quantity} • Price: ৳{money(it.price)}
                             </div>
                           </div>
 
                           <div className="font-semibold">
-                            ৳{money(it.subtotal ?? (Number(it.price) * Number(it.quantity)))}
+                            ৳
+                            {money(
+                              it.subtotal ??
+                                Number(it.price || 0) * Number(it.quantity || 0)
+                            )}
                           </div>
                         </div>
                       ))}
@@ -434,9 +578,7 @@ export default function VendorOrders() {
                   <div className="bg-white border rounded-2xl p-6">
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-semibold">Status Timeline</div>
-                      <div className="text-sm text-slate-500">
-                        {timeline.length} updates
-                      </div>
+                      <div className="text-sm text-slate-500">{timeline.length} updates</div>
                     </div>
 
                     <div className="mt-4 space-y-5">
@@ -470,15 +612,19 @@ export default function VendorOrders() {
                     </div>
                   </div>
 
-                  <div className="bg-white border rounded-2xl p-6">
+                  {/* ✅ Update Status card */}
+                  
+                  <div className="bg-white border rounded-2xl p-6 overflow-visible">
                     <div className="text-sm font-semibold mb-4">Update Status</div>
 
                     <select
                       className="w-full border rounded-2xl px-4 py-3 bg-white"
                       value={statusForm.status}
-                      onChange={(e) =>
-                        setStatusForm((s) => ({ ...s, status: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setSaveMsg("");
+                        setSaveErr("");
+                        setStatusForm((s) => ({ ...s, status: e.target.value }));
+                      }}
                     >
                       {allowedNext.map((s) => (
                         <option key={s} value={s}>
@@ -488,26 +634,53 @@ export default function VendorOrders() {
                     </select>
 
                     <textarea
-                      className="w-full border rounded-2xl px-4 py-3 bg-white mt-3 min-h-[110px]"
-                      placeholder="Optional note (required for cancelled/refunded)"
-                      value={statusForm.note}
-                      onChange={(e) =>
-                        setStatusForm((s) => ({ ...s, note: e.target.value }))
+                      className="w-full border rounded-2xl px-4 py-3 bg-white mt-3 h-[110px] resize-none"
+                      placeholder={
+                        noteRequired ? "Note is required for cancelled/refunded" : "Optional note"
                       }
+                      value={statusForm.note}
+                      onChange={(e) => {
+                        setSaveMsg("");
+                        setSaveErr("");
+                        setStatusForm((s) => ({ ...s, note: e.target.value }));
+                      }}
                     />
 
+                    {!isSelectedAllowed ? (
+                      <div className="mt-3 text-sm text-rose-700">
+                        This status is not allowed for this order.
+                      </div>
+                    ) : null}
+
+                    {noteRequired && !(statusForm.note || "").trim() ? (
+                      <div className="mt-3 text-sm text-rose-700">
+                        Note is required for cancelled/refunded.
+                      </div>
+                    ) : null}
+
+                    {saveMsg ? <div className="mt-3 text-sm text-emerald-700">{saveMsg}</div> : null}
+
+                    {saveErr ? (
+                      <div className="mt-3 text-sm text-rose-700 break-words">{saveErr}</div>
+                    ) : null}
+
                     <button
+                      type="button"
                       onClick={saveStatus}
-                      disabled={saving}
-                      className="w-full mt-4 px-5 py-3 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-60"
+                      className="
+                        relative z-10 w-full mt-4 px-5 py-3 rounded-2xl
+                        bg-primary text-white font-medium
+                        transition-all duration-200 ease-in-out
+                        hover:bg-primary/90 hover:shadow-lg hover:-translate-y-[1px]
+                        active:bg-primary/80 active:translate-y-0
+                        focus:outline-none focus:ring-2 focus:ring-primary/40
+                      "
                     >
-                      {saving ? "Saving…" : "Save Status"}
+                      Update Status
                     </button>
 
-                    {saveMsg ? (
-                      <div className="mt-3 text-sm text-slate-600">{saveMsg}</div>
-                    ) : null}
                   </div>
+
                 </div>
               </div>
             )}

@@ -1,6 +1,6 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { jwtDecode } from "jwt-decode";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import logo from "../assets/logo.png";
 import { useCart } from "../hooks/useCart.js";
@@ -9,6 +9,7 @@ import api from "../api/client";
 
 export default function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { totalItems } = useCart();
 
   const accessToken =
@@ -22,6 +23,11 @@ export default function Navbar() {
     isVendor: false,
     displayName: "",
   });
+
+  // ✅ Search state
+  const [searchText, setSearchText] = useState("");
+  const debounceRef = useRef(null);
+  const ignoreNextDebounceRef = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -39,7 +45,6 @@ export default function Navbar() {
         return;
       }
 
-      // 1) Fast path: decode token (might not include role depending on login endpoint)
       let displayName = "";
       let isAdmin = false;
       let roleFromToken = null;
@@ -75,7 +80,6 @@ export default function Navbar() {
         return;
       }
 
-      // 2) Fallback: ask backend who I am (you already have /api/auth/me/)
       try {
         const res = await api.get("/auth/me/");
         const role = res.data?.role;
@@ -87,7 +91,7 @@ export default function Navbar() {
           isVendor: role === "vendor",
           displayName: res.data?.email || displayName || "",
         });
-      } catch (e) {
+      } catch {
         if (!alive) return;
         setRoleState({
           isLoggedIn: true,
@@ -121,6 +125,71 @@ export default function Navbar() {
     navigate("/login", { replace: true });
   };
 
+  // ✅ helper: navigate to products with (optional) search query
+  const goToSearch = (q) => {
+    const query = (q || "").trim();
+
+    if (!query) {
+      // Keep user on /products when clearing search
+      navigate("/products");
+      return;
+    }
+
+    navigate(`/products?search=${encodeURIComponent(query)}`);
+  };
+
+  // ✅ Enter-to-search (still supported)
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    ignoreNextDebounceRef.current = true; // avoid double nav (submit + debounce)
+    goToSearch(searchText);
+  };
+
+  // ✅ Debounce: search while typing (only triggers when user is on /products or /featured)
+  useEffect(() => {
+    // Don’t run debounce if we just submitted (enter)
+    if (ignoreNextDebounceRef.current) {
+      ignoreNextDebounceRef.current = false;
+      return;
+    }
+
+    // Only auto-search when user is browsing products/featured (prevents annoying redirect from other pages)
+    const onSearchablePage =
+      location.pathname === "/products" || location.pathname === "/featured";
+
+    if (!onSearchablePage) return;
+
+    // Clear prior timer
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(() => {
+      const q = (searchText || "").trim();
+
+      // Optional: avoid firing for 1-character queries (feel free to change to 1)
+      if (q.length === 0) {
+          // ✅ Do NOT kick user out of Featured page
+          if (location.pathname === "/featured") return;
+
+          navigate("/products");
+          return;
+        }
+
+      if (q.length === 1) return;
+
+      goToSearch(q);
+    }, 400); // ✅ debounce delay (ms)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchText, location.pathname]); // run when typing, but only on /products or /featured
+
+  const handleClearSearch = () => {
+    setSearchText("");
+    // Immediately navigate back to /products with no query
+    navigate("/products");
+  };
+
   return (
     <header className="bg-white border-b">
       {/* Top bar */}
@@ -131,13 +200,38 @@ export default function Navbar() {
           <span className="font-semibold text-sm tracking-wide">URBAN CART</span>
         </Link>
 
-        {/* Search */}
-        <div className="hidden md:flex flex-1 max-w-md mx-6">
-          <input
-            placeholder="Search products..."
-            className="w-full px-4 py-2 rounded-full border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
-          />
-        </div>
+        {/* ✅ Search (debounced + clear button) */}
+        <form
+          onSubmit={handleSearchSubmit}
+          className="hidden md:flex flex-1 max-w-md mx-6"
+        >
+          <div className="relative w-full">
+            <input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Search products..."
+              className="w-full px-4 py-2 pr-10 rounded-full border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+
+            {/* ✅ Clear (×) button */}
+            {searchText.trim().length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full hover:bg-gray-200 text-gray-600 flex items-center justify-center"
+                aria-label="Clear search"
+                title="Clear"
+              >
+                ×
+              </button>
+            )}
+          </div>
+
+          {/* Hidden submit button so Enter works */}
+          <button type="submit" className="hidden" aria-hidden="true">
+            Search
+          </button>
+        </form>
 
         {/* Right */}
         <div className="flex items-center gap-4 text-sm">
@@ -147,7 +241,6 @@ export default function Navbar() {
                 Hi, {roleState.displayName}
               </span>
 
-              {/* ✅ Vendor button -> Vendor Dashboard */}
               {roleState.isVendor && (
                 <NavLink
                   to="/vendor"
@@ -157,7 +250,6 @@ export default function Navbar() {
                 </NavLink>
               )}
 
-              {/* Admin button */}
               {roleState.isAdmin && (
                 <NavLink
                   to="/admin"

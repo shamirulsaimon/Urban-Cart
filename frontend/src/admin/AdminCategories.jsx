@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { Link } from "react-router-dom";
-
+import api from "../api/client"; // ✅ use your JWT client (no new axios instance)
 
 /**
- * Django SessionAuth + CSRF-ready axios instance
+ * NOTE:
+ * We removed the local axios.create() because it was using session/CSRF,
+ * which causes 401 on JWT-protected /api/admin/* endpoints.
  */
-const api = axios.create({
-  baseURL: "/api",
-  withCredentials: true,
-  xsrfCookieName: "csrftoken",
-  xsrfHeaderName: "X-CSRFToken",
-});
 
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -60,7 +55,11 @@ function Toast({ toast, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">
-              {toast.type === "success" ? "Success" : toast.type === "error" ? "Error" : "Info"}
+              {toast.type === "success"
+                ? "Success"
+                : toast.type === "error"
+                ? "Error"
+                : "Info"}
             </div>
             <div className="mt-1 text-sm">{toast.message}</div>
           </div>
@@ -122,7 +121,10 @@ export default function AdminCategories() {
         isActive: showInactiveCats ? undefined : true,
         ordering: "sort_order,name",
       };
+
+      // ✅ JWT-authenticated request
       const res = await api.get("/admin/categories/", { params });
+
       const list = unwrapList(res.data);
       setCategories(list);
 
@@ -154,7 +156,10 @@ export default function AdminCategories() {
         isActive: showInactiveSubs ? undefined : true,
         ordering: "sort_order,name",
       };
+
+      // ✅ JWT-authenticated request
       const res = await api.get("/admin/subcategories/", { params });
+
       setSubcategories(unwrapList(res.data));
     } catch (err) {
       showToast("error", getErrMsg(err));
@@ -186,7 +191,10 @@ export default function AdminCategories() {
         sortOrder: Number(catForm.sortOrder) || 0,
         isActive: true,
       };
+
+      // ✅ JWT-authenticated request
       await api.post("/admin/categories/", payload);
+
       setCatForm({ name: "", slug: "", sortOrder: 0 });
       showToast("success", "Category created");
       await loadCategories();
@@ -259,7 +267,9 @@ export default function AdminCategories() {
         sortOrder: Number(subForm.sortOrder) || 0,
         isActive: true,
       };
+
       await api.post("/admin/subcategories/", payload);
+
       setSubForm({ name: "", slug: "", sortOrder: 0 });
       showToast("success", "Subcategory created");
       await loadSubcategories(selectedCategoryId);
@@ -318,7 +328,6 @@ export default function AdminCategories() {
   }
 
   const busy = savingCat || savingSub || !!mutatingId;
-
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">

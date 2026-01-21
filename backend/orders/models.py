@@ -41,6 +41,23 @@ class Order(models.Model):
     shipping_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    # -----------------------------------------
+    # DEMO SSLCommerz-style OTP payment fields
+    # (For project show only)
+    # -----------------------------------------
+    demo_payment_channel = models.CharField(
+        max_length=20, blank=True, default=""
+    )  # "bkash" | "card" | etc
+    demo_payment_phone = models.CharField(
+        max_length=30, blank=True, default=""
+    )
+
+    demo_otp_code = models.CharField(max_length=12, blank=True, default="")
+    demo_otp_created_at = models.DateTimeField(null=True, blank=True)
+    demo_otp_used = models.BooleanField(default=False)
+
+    demo_paid_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

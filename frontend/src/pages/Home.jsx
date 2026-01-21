@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import ProductCard from "../components/ProductCard";
-
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 function getColsForWidth(w) {
@@ -29,9 +28,9 @@ export default function Home() {
   );
   const [loading, setLoading] = useState(false);
 
-  // ✅ 3 rows max (responsive)
+  
   const limit = useMemo(() => cols * 3, [cols]);
-
+  
   useEffect(() => {
     function onResize() {
       setCols(getColsForWidth(window.innerWidth));
@@ -41,7 +40,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    async function loadHomeProducts() {
+    async function loadHomeProducts() { 
       try {
         setLoading(true);
         const res = await axios.get(`${API_BASE}/api/catalog/products/`);
@@ -77,7 +76,7 @@ export default function Home() {
           </p>
           <div className="flex gap-3">
             <button className="bg-black text-white px-4 py-2 rounded-full text-sm font-medium hover:bg-gray-900">
-              Shop now
+              Browse Featured Product
             </button>
             <button className="border border-black text-black px-4 py-2 rounded-full text-sm font-medium hover:bg-black hover:text-white">
               View all products
@@ -92,10 +91,8 @@ export default function Home() {
       {/* Featured products */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold">Featured products</h2>
-          <button className="text-xs text-gray-600 hover:underline">
-            View all
-          </button>
+          <h2 className="text-xl font-semibold">products</h2>
+          
         </div>
 
         {loading ? (
